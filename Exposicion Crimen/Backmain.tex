@@ -1,0 +1,554 @@
+\documentclass[12pt,a4paper]{article}
+\setlength{\parindent}{0pt}
+% Paquetes
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{colortbl}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+% Título
+\title{\textbf{Modelo de Ising para Criminalidad en Bogotá}\\[0.3cm]
+       \large Proyecto Final - Mecánica estadística\\[0.3cm]
+       \normalsize Programa académico de física\\[0.3cm]
+       \normalsize Universidad Distrital Francisco José de Caldas}
+\author{Juan David Chaparro Rojas}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{center}
+\includegraphics[width=0.3\textwidth]{Escudo_UD.png}
+\end{center}
+
+\thispagestyle{empty}
+\newpage
+
+% ============================================================================
+% RESUMEN
+% ============================================================================
+\begin{abstract}
+Este proyecto aplica el modelo de Ising de la física estadística para modelar la dinámica criminal en Bogotá D.C., utilizando \textbf{1,068,340 llamadas} a la línea de emergencias 123 (2015-2026) y \textbf{4 fuentes de datos abiertos} (estratificación socioeconómica, deserción escolar, Comandos de Atención Inmediata y pobreza). 
+
+El modelo de Ising, originalmente diseñado para describir transiciones de fase en materiales magnéticos, se adapta aquí para modelar la \textbf{propagación del crimen} entre Unidades de Planeamiento Zonal (UPZ) vecinas. Cada UPZ se trata como un ``espín'' que puede estar en estado activo ($+1$, alta criminalidad) o inactivo ($-1$, baja criminalidad), y la interacción entre UPZs vecinas captura el efecto de contagio espacial.
+
+Los resultados principales muestran que:
+\begin{itemize}
+    \item El modelo base (con efectos fijos por UPZ) alcanza un \textbf{AUC = 0.971} en predicción de hotspots criminales
+    \item El contagio espacial existe pero es moderado ($J = 0.4336$), explicando solo el 59\% de la predictibilidad
+    \item Los campos locales $h_i$ (vulnerabilidad intrínseca) son el factor dominante
+    \item El \textbf{92.5\%} de la variación en $h_i$ entre UPZs puede explicarse mediante variables observables: deserción escolar, área de la UPZ, estratificación y presencia policial
+    \item La deserción escolar es el predictor más robusto de criminalidad ($r = 0.54$)
+    \item El sistema se encuentra en \textbf{fase desordenada} ($T_{\text{eff}} = 1.29 > T_{\text{crit}} = 0.89$)
+\end{itemize}
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================================
+% 1. INTRODUCCIÓN
+% ============================================================================
+\section{Introducción}
+
+\subsection{Motivación}
+La criminalidad urbana es uno de los problemas más apremiantes en las ciudades latinoamericanas. Bogotá D.C., con más de 8 millones de habitantes, presenta patrones criminales complejos que varían tanto en el espacio como en el tiempo. Comprender estos patrones no solo requiere identificar \textit{dónde} ocurre el crimen, sino también \textit{cómo se propaga} entre zonas vecinas y \textit{qué factores estructurales} lo determinan.
+
+Los enfoques tradicionales en criminología (teoría de la desorganización social, teoría de la oportunidad, \textit{hotspot policing}) han proporcionado marcos valiosos, pero raramente incorporan la \textbf{dinámica temporal} y la \textbf{interacción espacial} de manera simultánea. La física estadística ofrece herramientas matemáticas precisamente diseñadas para modelar sistemas con muchas partículas interactuantes.
+
+\subsection{Objetivos}
+\begin{enumerate}[label=\alph*)]
+    \item Adaptar el modelo de Ising para modelar la dinámica criminal en Bogotá
+    \item Estimar el parámetro de contagio espacial ($J$) y los campos locales ($h_i$) a partir de datos reales
+    \item Incorporar variables socioeconómicas para explicar los campos locales
+    \item Evaluar la capacidad predictiva del modelo mediante validación cruzada temporal
+    \item Derivar implicaciones de política pública basadas en los resultados
+\end{enumerate}
+
+\subsection{Estructura del Documento}
+El documento se organiza de la siguiente manera: la Sección 2 presenta el marco teórico del modelo de Ising y su adaptación al contexto criminal. La Sección 3 describe los datos utilizados y la metodología de construcción de espines. La Sección 4 detalla los modelos estimados. La Sección 5 presenta los resultados principales. La Sección 6 discute las implicaciones para política pública. Finalmente, la Sección 7 concluye.
+
+% ============================================================================
+% 2. MARCO TEÓRICO
+% ============================================================================
+\section{Marco Teórico}
+
+\subsection{El Modelo de Ising en Física Estadística}
+
+El modelo de Ising, propuesto por Wilhelm Lenz en 1920 y resuelto en una dimensión por Ernst Ising en 1925, describe un sistema de partículas (espines) dispuestas en una red que pueden estar en dos estados cuánticos: $s_i = \pm 1$. La energía del sistema está dada por el Hamiltoniano:
+
+\begin{equation}\label{eq:hamiltoniano}
+H = -J \sum_{\langle i,j \rangle} s_i s_j - \sum_i h_i s_i
+\end{equation}
+
+donde:
+\begin{itemize}
+    \item $J$ es la constante de acoplamiento que determina la fuerza de interacción entre partículas vecinas
+    \item $\langle i,j \rangle$ denota pares de partículas vecinas en la red
+    \item $h_i$ es un campo magnético externo que actúa sobre la partícula $i$
+    \item $s_i \in \{-1, +1\}$ es el estado del espín
+\end{itemize}
+
+La probabilidad de encontrar el sistema en una configuración particular $\{s\}$ sigue la distribución de Boltzmann:
+
+\begin{equation}\label{eq:boltzmann}
+P(\{s\}) = \frac{1}{Z} \exp\left(-\frac{H}{k_B T}\right)
+\end{equation}
+
+donde $Z$ es la función de partición, $k_B$ es la constante de Boltzmann y $T$ es la temperatura.
+
+Los observables macroscópicos de interés son:
+\begin{itemize}
+    \item \textbf{Magnetización}: $M = \frac{1}{N}\sum_i s_i$ (orden global del sistema)
+    \item \textbf{Correlación espacial}: $C = \frac{1}{N_{\text{edges}}}\sum_{\langle i,j \rangle} s_i s_j$ (orden local)
+    \item \textbf{Susceptibilidad}: $\chi = N \cdot \text{Var}(M)$ (sensibilidad a perturbaciones)
+\end{itemize}
+
+\subsection{Analogía Sociofísica}
+
+La adaptación del modelo de Ising al contexto criminal establece las siguientes correspondencias:
+
+\begin{table}[H]
+\centering
+\caption{Analogía entre el modelo de Ising y la criminalidad urbana}
+\label{tab:analogia}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Concepto Físico} & \textbf{Símbolo} & \textbf{Interpretación Criminológica} \\
+\midrule
+Espín & $s_i = \pm 1$ & UPZ con alta/baja actividad criminal \\
+Interacción & $J$ & Fuerza del contagio criminal entre UPZs vecinas \\
+Campo externo & $h_i$ & Vulnerabilidad intrínseca de cada UPZ \\
+Temperatura & $T$ & Nivel de ``ruido'' o impredictibilidad \\
+Magnetización & $M$ & Nivel global de actividad criminal \\
+Susceptibilidad & $\chi$ & Sensibilidad a shocks externos \\
+Correlación & $C$ & Grado de clustering criminal \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Modelo Dinámico para Predicción}
+
+Para adaptar el modelo a predicción temporal, utilizamos la versión dinámica (Markoviana) del modelo de Ising:
+
+\begin{equation}\label{eq:dinamico}
+P\left(s_i(t+1) = +1 \mid \mathbf{s}(t)\right) = \sigma\left(J \sum_{j \in \partial i} s_j(t) + h_i\right)
+\end{equation}
+
+donde $\sigma(x) = 1/(1+e^{-x})$ es la función sigmoide (logística), $\partial i$ denota el conjunto de vecinos de la UPZ $i$, y $\mathbf{s}(t)$ es la configuración de espines en el tiempo $t$.
+
+\subsection{Modelo Sociofísico Enriquecido}
+
+Extendemos el modelo base para que los parámetros $J$ y $h$ dependan de covariables observables:
+
+\begin{equation}\label{eq:sociofisico}
+P(s_i=+1) = \sigma\left(J_i(\mathbf{X}) \sum_{j \in \partial i} s_j + h_i(\mathbf{X})\right)
+\end{equation}
+
+donde:
+\begin{align}
+J_i &= \beta_0 + \sum_{k=1}^{K} \beta_k X_{ik} \label{eq:J_modulado} \\
+h_i &= \alpha_0 + \sum_{k=1}^{K} \alpha_k X_{ik} \label{eq:h_explicado}
+\end{align}
+
+y $X_{ik}$ son las $K$ covariables socioeconómicas de la UPZ $i$.
+
+Esta formulación permite que:
+\begin{enumerate}[label=\alph*)]
+    \item El contagio criminal varíe según características locales
+    \item El campo local sea explicado por factores observables
+    \item El modelo sea \textbf{interpretable} y \textbf{accionable} para política pública
+\end{enumerate}
+
+% ============================================================================
+% 3. DATOS Y METODOLOGÍA
+% ============================================================================
+\section{Datos y Metodología}
+
+\subsection{Fuentes de Datos}
+
+\begin{table}[H]
+\centering
+\caption{Fuentes de datos utilizadas}
+\label{tab:fuentes}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Fuente} & \textbf{Registros} & \textbf{Variables} \\
+\midrule
+Llamadas Línea 123 (2015-2026) & 1,068,340 & Tipo de incidente, UPZ, fecha \\
+Estratificación (Manzanas) & 39,150 & Estrato socioeconómico \\
+Deserción Escolar (UPZ) & 118 & Tasas por género y grado \\
+CAIs & 154 & Ubicación de comandos policiales \\
+Shapefile UPZ & 113 & Geometría, área, perímetro \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Construcción de Espines}
+
+Para cada UPZ $i$ y cada mes $t$, se calcula el número de incidentes de alto impacto (hurto, lesiones personales, narcóticos, riñas, alteración del orden público, persona/vehículo sospechoso). Los espines se definen mediante umbrales basados en percentiles:
+
+\begin{equation}\label{eq:espines}
+s_i(t) = \begin{cases}
++1 & \text{si } \text{incidentes}_i(t) > P_{70}^{(i)} \\
+-1 & \text{si } \text{incidentes}_i(t) < P_{30}^{(i)} \\
+0  & \text{en otro caso}
+\end{cases}
+\end{equation}
+
+donde $P_{70}^{(i)}$ y $P_{30}^{(i)}$ son los percentiles 70 y 30 de la distribución histórica de incidentes en la UPZ $i$.
+
+Esto produce una matriz de espines de dimensión $135 \text{ meses} \times 124 \text{ UPZs}$.
+
+\subsection{Red de Vecinos}
+
+Dos UPZs se consideran vecinas si comparten frontera geográfica (\texttt{geometry.touches}). La red resultante tiene:
+\begin{itemize}
+    \item 111 UPZs conectadas (13 UPZs quedan aisladas por ser rurales o aeropuerto)
+    \item 302 conexiones (aristas)
+    \item Grado promedio: $\approx 5.4$ vecinos por UPZ
+\end{itemize}
+
+\subsection{Observables del Sistema}
+
+De la matriz de espines calculamos:
+\begin{itemize}
+    \item $M_{\text{obs}} = -0.0673$ (ligeramente más UPZs inactivas que activas)
+    \item $C_{\text{obs}} = 0.1210$ (correlación espacial positiva)
+    \item $\chi_{\text{obs}} = 2.78$ (susceptibilidad)
+\end{itemize}
+
+\subsection{Validación con Permutaciones}
+
+Para verificar que la correlación espacial observada no es producto del azar, realizamos 200 permutaciones de los espines (barajando las etiquetas de UPZ dentro de cada mes, destruyendo así la estructura espacial pero manteniendo la distribución marginal). Los resultados muestran:
+\begin{itemize}
+    \item $C_{\text{obs}} = 0.1210$ vs $E[C_{\text{null}}] = 0.1143$ con $p < 0.001$
+    \item $\chi_{\text{obs}} = 2.78$ vs $E[\chi_{\text{null}}] = 28.96$ con $p = 1.000$
+\end{itemize}
+
+La correlación espacial es \textbf{significativa} (el crimen forma clusters), pero la susceptibilidad no lo es (la ciudad no responde de forma colectiva coordinada).
+
+% ============================================================================
+% 4. MODELOS ESTIMADOS
+% ============================================================================
+\section{Modelos Estimados}
+
+\subsection{Modelo 0: Ising Puro (Solo Contagio)}
+
+El modelo más simple solo incluye el término de contagio:
+
+\begin{equation}
+P(s_i=+1) = \sigma(J \cdot \Sigma s_{\text{vecinos}})
+\end{equation}
+
+Estimado por regresión logística, produce:
+\begin{itemize}
+    \item $J = 0.1546$
+    \item \textbf{AUC = 0.5915} en datos de prueba
+\end{itemize}
+
+El contagio puro explica apenas un 9\% más que el azar.
+
+\subsection{Modelo 1: Ising Base (J + Efectos Fijos)}
+
+\begin{equation}
+P(s_i=+1) = \sigma(J \cdot \Sigma s_{\text{vecinos}} + h_i)
+\end{equation}
+
+Donde $h_i$ son efectos fijos (dummies) por UPZ estimados con regularización L2:
+\begin{itemize}
+    \item $J = 0.4336$
+    \item \textbf{AUC = 0.9710} en datos de prueba
+    \item 111 parámetros $h_i$ estimados
+    \item Rango de $h_i$: $[-4.52, 5.21]$
+\end{itemize}
+
+Este modelo tiene excelente capacidad predictiva pero $h_i$ es una ``caja negra''.
+
+\subsection{Modelo 2: Ising Sociofísico (J Modulado + h Explicado)}
+
+\begin{equation}
+P(s_i=+1) = \sigma\left(J_i(\mathbf{X}) \cdot \Sigma s_{\text{vecinos}} + h_i(\mathbf{X})\right)
+\end{equation}
+
+Con covariables: deserción escolar promedio, área de la UPZ, estrato medio, porcentaje de estrato bajo, número de CAIs, densidad de CAIs y heterogeneidad de estratos.
+\begin{itemize}
+    \item \textbf{AUC = 0.7244} en datos de prueba
+    \item 15 parámetros interpretables
+    \item Validación cruzada temporal (5 folds): AUC = $0.6821 \pm 0.0179$
+\end{itemize}
+
+\subsection{Comparación de Modelos}
+
+\begin{table}[H]
+\centering
+\caption{Comparación de modelos de Ising}
+\label{tab:comparacion}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Modelo} & \textbf{AUC} & \textbf{Parámetros} & \textbf{Interpretabilidad} \\
+\midrule
+Ising Puro (solo $J$) & 0.5915 & 1 & Alta \\
+Ising Base ($J + h_i$ dummies) & 0.9710 & 112 & Nula (caja negra) \\
+Ising Sociofísico & 0.7244 & 15 & Alta \\
+\rowcolor{yellow!20}
+Mejora sobre azar & +0.2244 & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
+% 5. RESULTADOS
+% ============================================================================
+\section{Resultados}
+
+\subsection{Coeficientes del Modelo Sociofísico}
+
+\begin{table}[H]
+\centering
+\caption{Coeficientes del modelo de Ising sociofísico}
+\label{tab:coeficientes}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\textbf{Variable} & \textbf{Coeficiente} & \textbf{Interpretación} \\
+\midrule
+\multicolumn{3}{c}{\textit{Efectos sobre el CONTAGIO ($J$)}} \\
+\midrule
+deserción\_promedio & $-0.085^{**}$ & BLOQUEA el contagio \\
+n\_cais & $+0.116^{***}$ & AMPLIFICA el contagio \\
+estrato\_medio & $+0.039^{*}$ & AMPLIFICA el contagio \\
+densidad\_cais & $+0.048^{*}$ & AMPLIFICA el contagio \\
+\midrule
+\multicolumn{3}{c}{\textit{Efectos sobre el CAMPO LOCAL ($h$)}} \\
+\midrule
+deserción\_promedio & $+0.199^{***}$ & AUMENTA crimen local \\
+estrato\_medio & $-0.393^{***}$ & REDUCE crimen local \\
+n\_cais & $+0.088^{**}$ & AUMENTA crimen local \\
+densidad\_cais & $-0.023^{*}$ & REDUCE crimen local \\
+\bottomrule
+\multicolumn{3}{l}{\footnotesize $^{***}p<0.01, ^{**}p<0.05, ^{*}p<0.10$} \\
+\end{tabular}
+\end{table}
+
+\subsection{Poder Explicativo de $h_i$}
+
+\begin{table}[H]
+\centering
+\caption{Evolución del poder explicativo ($R^2$) de $h_i$}
+\label{tab:r2}
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{Etapa} & \textbf{$R^2$} \\
+\midrule
+Proxies geométricos (área, perímetro, compacidad) & 9.4\% \\
++ Cobertura educativa (tasas H\_/M\_) & 22.4\% \\
++ Datos abiertos (estratificación, deserción, CAIs) & \textbf{92.5\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Fase Termodinámica}
+
+Mediante simulación Monte Carlo del modelo de Ising con $J=0.4336$ y los $h_i$ estimados, barremos temperaturas $T \in [0.5, 8.0]$ y comparamos los observables simulados con los reales:
+
+\begin{itemize}
+    \item $T_{\text{eff}} = 1.29$ (temperatura que mejor ajusta los observables)
+    \item $T_{\text{crit}} = 0.89$ (temperatura de máxima susceptibilidad)
+    \item \textbf{Fase: DESORDENADA} ($T_{\text{eff}} > T_{\text{crit}}$)
+\end{itemize}
+
+En fase desordenada, las fluctuaciones aleatorias dominan sobre el orden magnético. Los hotspots criminales son efímeros y el sistema es más impredecible.
+
+\subsection{Análisis de Correlaciones}
+
+\begin{table}[H]
+\centering
+\caption{Top 5 variables más correlacionadas con criminalidad local ($h_i$)}
+\label{tab:correlaciones}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Variable} & \textbf{Correlación ($r$)} & \textbf{p-valor} \\
+\midrule
+deserción\_min & +0.539 & $<0.001$ \\
+deserción\_max & +0.458 & $<0.001$ \\
+deserción\_promedio & +0.451 & $<0.001$ \\
+Shape\_Area & +0.418 & $<0.001$ \\
+M\_Once (deserción femenina grado 11) & +0.387 & $<0.001$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Métricas de Clasificación}
+
+\begin{table}[H]
+\centering
+\caption{Reporte de clasificación - Modelo Sociofísico}
+\label{tab:clasificacion}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Clase} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} & \textbf{Soporte} \\
+\midrule
+Inactivo ($-1$) & 0.73 & 0.63 & 0.68 & 1,747 \\
+Activo ($+1$) & 0.56 & 0.66 & 0.61 & 1,228 \\
+\midrule
+Accuracy & \multicolumn{4}{c}{0.65} \\
+Macro Avg & 0.64 & 0.65 & 0.64 & 2,975 \\
+Weighted Avg & 0.66 & 0.65 & 0.65 & 2,975 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
+% 6. DISCUSIÓN
+% ============================================================================
+\section{Discusión}
+
+\subsection{Interpretación de los Hallazgos}
+
+\textbf{1. La deserción escolar es el predictor más robusto de criminalidad.} Con una correlación de $r=0.54$ y coeficientes significativos tanto en $J$ como en $h$, la deserción escolar emerge como el factor estructural más importante. El signo negativo en $J$ sugiere que la deserción crea ``islas'' de crimen autónomo: zonas donde el crimen es endémico pero no se propaga fácilmente a vecinos.
+
+\textbf{2. El estrato socioeconómico tiene efectos opuestos sobre $J$ y $h$.} Zonas de estrato alto reducen el crimen local ($h$ negativo) pero amplifican el contagio ($J$ positivo). Esto podría deberse a mayor movilidad y flujo de personas en zonas acomodadas, que facilitan la propagación del crimen desde zonas vecinas.
+
+\textbf{3. Los CAIs son reactivos, no preventivos.} La correlación positiva entre número de CAIs y criminalidad ($h=+0.088$) refleja endogeneidad: los comandos policiales se instalan donde ya hay crimen, no necesariamente lo reducen.
+
+\textbf{4. El sistema está en fase desordenada.} Con $T_{\text{eff}} > T_{\text{crit}}$, el ruido domina sobre el orden. Esto implica que intervenciones puntuales pueden tener efectos impredecibles, y que se requieren estrategias sostenidas más que intervenciones quirúrgicas.
+
+\subsection{Limitaciones}
+
+\begin{enumerate}[label=\alph*)]
+    \item \textbf{Endogeneidad}: Variables como el número de CAIs son endógenas (se instalan donde hay crimen)
+    \item \textbf{Datos faltantes}: Solo 77 de 113 UPZs tienen datos de estratificación
+    \item \textbf{Agregación temporal}: El modelo usa datos mensuales; podría haber dinámicas semanales no capturadas
+    \item \textbf{Causalidad}: Las correlaciones no implican causalidad; se requieren diseños cuasi-experimentales
+\end{enumerate}
+
+\subsection{Implicaciones para Política Pública}
+
+\begin{enumerate}[label=\alph*)]
+    \item \textbf{Intervención educativa prioritaria}: Programas de retención escolar, especialmente en hombres de grados 10-11
+    \item \textbf{Estrategia territorial diferenciada}: UPZs grandes requieren estrategias de escala; las pequeñas, intervenciones focalizadas
+    \item \textbf{Revisión de la política de CAIs}: Evaluar si la presencia policial reduce efectivamente el crimen o solo responde a él
+    \item \textbf{Monitoreo de temperatura efectiva}: Identificar períodos de alta susceptibilidad donde intervenciones tienen mayor impacto
+\end{enumerate}
+
+% ============================================================================
+% 7. CONCLUSIONES
+% ============================================================================
+\section{Conclusiones}
+
+Este proyecto demuestra que el modelo de Ising, enriquecido con datos socioeconómicos, constituye una herramienta poderosa para entender y predecir la criminalidad urbana. Las principales contribuciones son:
+
+\begin{enumerate}[label=\alph*)]
+    \item \textbf{Validación empírica del contagio criminal}: El parámetro $J = 0.4336$ es significativo, confirmando que el crimen se propaga entre UPZs vecinas, aunque el efecto es moderado comparado con los factores locales.
+    
+    \item \textbf{Identificación de factores estructurales}: El 92.5\% de la variación criminal entre UPZs puede explicarse mediante variables observables, siendo la deserción escolar el predictor más robusto.
+    
+    \item \textbf{Marco interpretable}: El modelo sociofísico permite descomponer el efecto de cada variable sobre el contagio ($J$) y sobre la propensión local ($h$), proporcionando una lectura dual que enriquece el análisis criminológico.
+    
+    \item \textbf{Herramienta de simulación}: El modelo calibrado permite simular intervenciones (reducir deserción, aumentar presencia policial) y estimar su impacto antes de implementarlas.
+\end{enumerate}
+
+Trabajo futuro incluye: incorporar más fuentes de datos abiertos (alumbrado público, consumo de sustancias, violencia intrafamiliar), explorar modelos con $J$ dependiente del tiempo, y validar las predicciones con datos de 2024-2025 no vistos durante el entrenamiento.
+
+% ============================================================================
+% REFERENCIAS
+% ============================================================================
+\begin{thebibliography}{99}
+
+\bibitem{ising1925}
+E. Ising, ``Beitrag zur Theorie des Ferromagnetismus,'' \textit{Zeitschrift für Physik}, vol. 31, no. 1, pp. 253--258, 1925.
+
+\bibitem{onsager1944}
+L. Onsager, ``Crystal statistics. I. A two-dimensional model with an order-disorder transition,'' \textit{Physical Review}, vol. 65, no. 3-4, pp. 117--149, 1944.
+
+\bibitem{castellano2009}
+C. Castellano, S. Fortunato, y V. Loreto, ``Statistical physics of social dynamics,'' \textit{Reviews of Modern Physics}, vol. 81, no. 2, pp. 591--646, 2009.
+
+\bibitem{prieto2020}
+R. Prieto Curiel et al., ``Crime and its fear in public spaces: A physicist's view,'' \textit{Scientific Reports}, 2020.
+
+\bibitem{bogota_datos}
+Alcaldía Mayor de Bogotá, ``Datos Abiertos Bogotá,'' \url{https://datosabiertos.bogota.gov.co}, 2024.
+
+\bibitem{sklearn}
+F. Pedregosa et al., ``Scikit-learn: Machine Learning in Python,'' \textit{Journal of Machine Learning Research}, vol. 12, pp. 2825--2830, 2011.
+
+\bibitem{geopandas}
+K. Jordahl et al., ``GeoPandas: Python tools for geographic data,'' \url{https://geopandas.org}, 2024.
+
+\end{thebibliography}
+
+% ============================================================================
+% APÉNDICE
+% ============================================================================
+\appendix
+\section{Top 10 UPZs con Mayor Criminalidad Estructural}
+
+\begin{table}[H]
+\centering
+\caption{UPZs con mayor $h_i$ (vulnerabilidad criminal intrínseca)}
+\label{tab:top10}
+\begin{tabular}{@{}rlccc@{}}
+\toprule
+\textbf{Ranking} & \textbf{UPZ} & \textbf{$h_i$} & \textbf{Deserción (\%)} & \textbf{Estrato} \\
+\midrule
+1 & FONTIBON & +5.21 & 4.4 & 2.8 \\
+2 & VERBENAL & +4.93 & 3.9 & 3.0 \\
+3 & LAS FERIAS & +4.61 & 1.9 & 2.6 \\
+4 & LUCERO & +4.31 & 3.8 & 3.0 \\
+5 & LA SABANA & +4.16 & 3.9 & 3.2 \\
+6 & EL PRADO & +4.14 & 2.9 & 2.5 \\
+7 & GRAN YOMASA & +4.09 & 2.1 & 3.0 \\
+8 & QUIROGA & +3.99 & 4.5 & 1.0 \\
+9 & EL PORVENIR & +3.93 & 2.1 & 2.1 \\
+10 & EL RINCON & +3.92 & 3.2 & 2.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Fórmulas del Modelo}
+
+\textbf{Probabilidad de activación}:
+\begin{equation}
+P(s_i=+1) = \frac{1}{1 + \exp\left(-\left[J_i \sum_{j \in \partial i} s_j + h_i\right]\right)}
+\end{equation}
+
+\textbf{Función de verosimilitud} (para estimación por máxima verosimilitud):
+\begin{equation}
+\mathcal{L}(J, \{h_i\}) = \prod_{t} \prod_{i} P(s_i(t+1) \mid \mathbf{s}(t))^{y_{it}} (1 - P(s_i(t+1) \mid \mathbf{s}(t)))^{1-y_{it}}
+\end{equation}
+
+\textbf{Algoritmo de Metropolis} (para simulación termodinámica):
+\begin{enumerate}
+    \item Seleccionar UPZ aleatoria $i$
+    \item Calcular cambio de energía: $\Delta E = 2s_i\left(J\sum_{j \in \partial i} s_j + h_i\right)$
+    \item Si $\Delta E \leq 0$, aceptar el cambio
+    \item Si $\Delta E > 0$, aceptar con probabilidad $\exp(-\Delta E / T)$
+\end{enumerate}
+
+\end{document}
